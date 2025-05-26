@@ -21,9 +21,11 @@ users db './users', 0   ; расположение каталога пользо
     CANCEL = 0x15
     M = 1000000
     KOEF = 100
+    LIM = 3
 
 ; переменные
 .var:
+    active_connections dq 0 ; количество подключений
     container rb 20         ; контейнер
     buffer rb 20            ; буфер
     rand dq ?               ; дескриптор ГСЧ
@@ -58,7 +60,7 @@ struc User
     .descriptor dq ?
 }
 
-user User       ; авторизованный полльзователь
+user User       ; авторизованный пользователь
 target User     ; получатель перевода
 
 ; структура адреса сокета
@@ -121,15 +123,37 @@ _start:
     call print_str
 
 .accept_loop:
-    ; принимаем запросы на подключение
-    mov rax, 43
+    ; Проверяем лимит подключений
+    cmp qword [active_connections], 10
+    jl @f
+
+    ; Ждем завершения любого дочернего процесса
+    mov rax, 61                 ; SYS_WAIT4
+    mov rdi, -1                 ; Любой дочерний процесс
+    xor rsi, rsi                ; Не сохранять статус
+    mov rdx, 0                  ; WNOHANG (блокировать)
+    xor r10, r10                ; Не нужны rusage
+    syscall
+
+    ; Если не нашли завершенный процесс
+    cmp rax, 0
+    jng .accept_loop
+
+    dec qword[active_connections]
+
+    @@:
+    ; Принимаем новое подключение
+    mov rax, 43                 ; SYS_ACCEPT
     mov rdi, [server_socket]
     mov rsi, client_adress
     mov rdx, len_client
     syscall
     cmp rax, 0
-    jl .accept_error             
+    jl .accept_error
     mov [client_socket], rax
+
+    ; Увеличиваем счетчик
+    inc qword [active_connections]
 
     mov rsi, msg_connected
     call print_str
@@ -145,18 +169,34 @@ _start:
     call print_str
     call new_line
 
-    ; создаем параллельный процесс для работы с клиентом
-    mov rax, 57
+    ; Создаем новый процесс
+    mov rax, 57                 ; SYS_FORK
     syscall
     cmp rax, 0
-    jl .fork_error  ; обработка ошибки fork
-    je .main_loop   ; дочерний процесс
+    jl .fork_error
+    je .pre_main_loop               ; Дочерний процесс
 
-    ; Родительский процесс - закрываем клиентский сокет и продолжаем accept
+    ; Родительский процесс
     mov rdi, [client_socket]
-    mov rax, 3                   ; SYS_CLOSE
+    mov rax, 3                  ; SYS_CLOSE
     syscall
+
+    ; Неблокирующая проверка завершенных процессов
+    mov rax, 61                 ; SYS_WAIT4
+    mov rdi, -1
+    xor rsi, rsi
+    mov rdx, 1                  ; WNOHANG
+    xor r10, r10
+    syscall
+    cmp rax, 0
+    jng .accept_loop
+    
+    dec qword[active_connections]
     jmp .accept_loop
+
+
+.pre_main_loop:
+call send_success
 
 .main_loop:
     mov rsi, buffer

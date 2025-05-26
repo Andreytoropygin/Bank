@@ -123,7 +123,6 @@ number_str:
     pop rdi
     ret
 
-
 ;The function realizates user input from the keyboard
 ;input: rsi - place of memory saved input string 
 input_keyboard:

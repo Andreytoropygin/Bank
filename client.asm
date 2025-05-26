@@ -103,6 +103,8 @@ _start:
     cmp rax, 0
     jl  .connect_error
 
+    call read_from_server
+
     mov rsi, msg_connected
     call print_str
 
@@ -253,7 +255,7 @@ _start:
 
         .check:
             call write_to_server
-            
+
             call read_from_server
             
             mov rsi, msg_your_score
