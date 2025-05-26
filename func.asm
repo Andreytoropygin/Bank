@@ -7,16 +7,26 @@ exit:
 ;Function printing of string
 ;input rsi - place of memory of begin string
 print_str:
+    push rdi
+    push rsi
+
     mov rax, rsi
     call len_str
     mov rdx, rax
     mov rax, 1
     mov rdi, 1
     syscall
+
+    pop rsi
+    pop rdi
     ret
 
 ;The function makes new line
 new_line:
+    push rdi
+    push rsi
+    push rcx
+
     mov rax, 0xA
     push rax
     mov rdi, 1
@@ -25,6 +35,10 @@ new_line:
     mov rax, 1
     syscall
     pop rax
+
+    pop rcx
+    pop rsi
+    pop rdi
     ret
 
 ;The function finds the length of a string
@@ -41,11 +55,13 @@ len_str:
         sub rax, rdx
         ret
 
-
 ;Function converting the string to the natural number
 ;input rsi - place of memory of begin string
 ;output rax - the natural number from the string
 str_number:
+    push rsi
+    push rdi
+
     xor rax,rax
     xor rcx,rcx
     .loop:
@@ -69,14 +85,20 @@ str_number:
     xor rax, rax
 
     .success:
-        mov rbx, 10
-        div rbx
-        ret
+    mov rbx, 10
+    div rbx
 
-;The function converts the nubmer to string
+    pop rdi
+    pop rsi
+    ret
+
+;The function converts the number to string
 ;input rax - number
 ;rsi -address of begin of string
 number_str:
+    push rdi
+    push rsi
+
     xor rcx, rcx
     mov rbx, 10
     .loop_1:
@@ -96,6 +118,9 @@ number_str:
         cmp rcx, 0
         jne .loop_2
     mov byte [rsi+rdx], 0 
+
+    pop rsi
+    pop rdi
     ret
 
 
@@ -106,15 +131,10 @@ input_keyboard:
     mov rdi, 0
     mov rdx, 20
     syscall
-    cmp rax, 0
-    je .empty
-
+    
     dec rax
     mov byte[rsi+rax], 0
     inc rax
-    ret
-
-    .empty:
     ret
 
 ;Function reading of string from file
@@ -122,8 +142,10 @@ input_keyboard:
 ; rdi - descriptor
 ;output rsi - string, rax - length
 readline:
+    push rdi
+    push rsi
+
     xor rcx, rcx
-    xor rbx, rbx
     .loop:
         push rcx
         mov rax, 0
@@ -143,6 +165,9 @@ readline:
     mov byte[rsi], 0
     sub rsi, rcx
     mov rax, rcx
+
+    pop rsi
+    pop rdi
     ret
 
 ;Function writing string to file
@@ -160,7 +185,6 @@ writeline:
 
     mov rax, 0xA
     push rax
-    mov rdi, 1
     mov rsi, rsp
     mov rdx, 1
     mov rax, 1

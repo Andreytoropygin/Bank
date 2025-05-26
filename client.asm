@@ -17,7 +17,7 @@ section '.bss' writable
     PAY_CREDIT = 0x35       ; '5' + 0
     SIGN_OUT = 0x36         ; '6' + 0
     INVALID = 0x39          ; '9' + 0
-    BREAK = 0x15
+    CANCEL = 0x15
     SUCCESS = '1'
 
 ; переменные
@@ -30,15 +30,43 @@ section '.bss' writable
 
 ; сообщения
 .msg:
+    msg_connected db 'Connected', 0xa, 0
+    msg_inner_options db    'Вы авторизованы. Нажмите:',0xa,\
+                            '0 для проверки состояния счета', 0xa,\
+                            '1 для совершения перевода', 0xa,\
+                            '2 для вноса средств', 0xa,\
+                            '3 для снятия средств', 0xa,\
+                            '4 для получения кредита', 0xa,\
+                            '5 для оплаты кредита', 0xa,\
+                            '6 для выхода из системы', 0xa,\
+                            'q для завершения работы', 0xa, 0
+    msg_outer_options db    'Вы не авторизованы. Нажмите:',0xa,\
+                            '1 для авторизации', 0xa,\
+                            '2 для регистрации', 0xa,\
+                            'q для завершения работы', 0xa, 0
+    msg_fault db 'Введите команду из списка доступных', 0xa, 0
+    msg_user_not_found db 'Пользователь не найден', 0xa, 0
+    msg_target_not_found db 'Получатель не найден', 0xa, 0
+    msg_not_enough_money db 'Недостаточно средств', 0xa, 0
+    msg_unclosed_credit db 'У Вас уже есть кредит. Для получения нового, погасите старый', 0xa, 0
+    msg_credit_denied db 'В кредите отказано', 0xa, 0
+    msg_overflow db 'Платеж превышает сумму кредита', 0xa, 0
+    msg_incorrect_password db 'Пароль неверный', 0xa, 0
+    msg_hello db 'Здравствуйте, ', 0
+    msg_create_password db 'Придумайте пароль:', 0xa, 0
+    msg_your_id db 'Ваш номер счета: ', 0
+    msg_your_score db 'Ваш счет: ', 0
+    msg_your_credit db 'Ваш кредит: ', 0
     msg_connect_error db 'Error connect', 0xa, 0
     msg_denied db 'Недопустимая команда', 0xa, 0
     msg_not_found db 'Команда не найдена', 0xa, 0
-    msg_enter_login db 'Введите логин:', 0xa, 0
+    msg_enter_name db 'Введите Ваше имя (до 20 символов):', 0xa, 0
     msg_enter_password db 'Введите пароль:', 0xa, 0
-    msg_enter_id db 'Введите номер счета:', 0xa, 0
-    msg_enter_number db 'Введите сумму:', 0xa, 0
+    msg_enter_id db 'Введите номер Вашего счета:', 0xa, 0
+    msg_enter_target_id db 'Введите номер счета получателя:', 0xa, 0
+    msg_enter_amount db 'Введите сумму:', 0xa, 0
     msg_sign_out db 'Вы вышли из системы', 0xa, 0
-    msg_connected db 'Connected', 0xa, 0
+    msg_empty_enter db 'Отмена операции', 0xa, 0
   
 struc sockaddr_server 
 {
@@ -85,8 +113,6 @@ _start:
     ; читаем команду с клавиатуры
     mov rsi, input_buffer
     call input_keyboard
-    cmp rax, 0
-    je .empty_enter
 
     ; выход на q
     cmp word[input_buffer], QUIT
@@ -143,16 +169,18 @@ _start:
 
             mov rsi, input_buffer
             call input_keyboard
-            cmp rax, 0
+            cmp rax, 1
             je .empty_enter
             call write_to_server
+
+            call read_from_server
 
             mov rsi, msg_enter_password
             call print_str
 
             mov rsi, input_buffer
             call input_keyboard
-            cmp rax, 0
+            cmp rax, 1
             je .empty_enter
             call write_to_server
             
@@ -166,6 +194,7 @@ _start:
             jmp .main
 
             @@:
+            call write_to_server
             call read_from_server
 
             cmp [buffer], SUCCESS
@@ -178,9 +207,11 @@ _start:
             @@:
             mov [sign_flag], 1
 
+            call write_to_server
+            call read_from_server
+
             mov rsi, msg_hello
             call print_str
-            call read_from_server
             mov rsi, buffer
             call print_str
             call new_line
@@ -193,22 +224,25 @@ _start:
 
             mov rsi, input_buffer
             call input_keyboard
-            cmp rax, 0
+            cmp rax, 1
             je .empty_enter
             call write_to_server
 
-            mov rsi, msg_enter_password
+            call read_from_server
+
+            mov rsi, msg_create_password
             call print_str
 
             mov rsi, input_buffer
             call input_keyboard
-            cmp rax, 0
+            cmp rax, 1
             je .empty_enter
             call write_to_server
             
+            call read_from_server
+
             mov rsi, msg_your_id
             call print_str
-            call read_from_server
             mov rsi, buffer
             call print_str
             call new_line
@@ -218,16 +252,22 @@ _start:
             jmp .main
 
         .check:
+            call write_to_server
+            
+            call read_from_server
+            
             mov rsi, msg_your_score
             call print_str
-            call read_from_server
             mov rsi, buffer
             call print_str
             call new_line
 
+            call write_to_server
+
+            call read_from_server
+
             mov rsi, msg_your_credit
             call print_str
-            call read_from_server
             mov rsi, buffer
             call print_str
             call new_line
@@ -240,16 +280,18 @@ _start:
 
             mov rsi, input_buffer
             call input_keyboard
-            cmp rax, 0
+            cmp rax, 1
             je .empty_enter
             call write_to_server
+
+            call read_from_server
 
             mov rsi, msg_enter_amount
             call print_str
 
             mov rsi, input_buffer
             call input_keyboard
-            cmp rax, 0
+            cmp rax, 1
             je .empty_enter
             call write_to_server
 
@@ -260,8 +302,10 @@ _start:
 
             mov rsi, msg_target_not_found
             call print_str
+            jmp .main
 
             @@:
+            call write_to_server
             call read_from_server
 
             cmp [buffer], SUCCESS
@@ -279,9 +323,11 @@ _start:
 
             mov rsi, input_buffer
             call input_keyboard
-            cmp rax, 0
+            cmp rax, 1
             je .empty_enter
             call write_to_server
+
+            call read_from_server
 
             jmp .main
 
@@ -291,7 +337,7 @@ _start:
 
             mov rsi, input_buffer
             call input_keyboard
-            cmp rax, 0
+            cmp rax, 1
             je .empty_enter
             call write_to_server
 
@@ -312,7 +358,7 @@ _start:
 
             mov rsi, input_buffer
             call input_keyboard
-            cmp rax, 0
+            cmp rax, 1
             je .empty_enter
             call write_to_server
 
@@ -323,8 +369,11 @@ _start:
 
             mov rsi, msg_unclosed_credit
             call print_str
+            jmp .main
             
             @@:
+            call write_to_server
+
             call read_from_server
 
             cmp [buffer], SUCCESS
@@ -342,7 +391,7 @@ _start:
 
             mov rsi, input_buffer
             call input_keyboard
-            cmp rax, 0
+            cmp rax, 1
             je .empty_enter
             call write_to_server
 
@@ -353,8 +402,11 @@ _start:
 
             mov rsi, msg_not_enough_money
             call print_str
+            jmp .main
             
             @@:
+            call write_to_server
+
             call read_from_server
 
             cmp [buffer], SUCCESS
@@ -367,15 +419,16 @@ _start:
             jmp .main
 
         .sign_out:
-            mov sign_flag, 0
+            mov [sign_flag], 0
             mov rsi, msg_sign_out
             call print_str
-            jmp .main_loop
+            jmp .main
 
 .empty_enter:
     mov rsi, msg_empty_enter
     call print_str
-    mov rsi, BREAK
+    mov rsi, input_buffer
+    mov word[input_buffer], CANCEL
     call write_to_server
     jmp .main
 
@@ -405,6 +458,7 @@ read_from_server:
     mov rsi, buffer          ;указываем, куда помещать прочитанные данные
     mov rdx, 20              ;устанавливаем количество считываемых данных
     syscall
+    mov byte[buffer+rax], 0
     ret
 
 ; в rsi указываем, откуда брать данные
@@ -419,7 +473,7 @@ write_to_server:
 
 ; выводит список доступных пользователю команд в зависимости от sign_flag
 print_options:
-    cmp sign_flag, 1
+    cmp [sign_flag], 1
     je .signed
 
     mov rsi, msg_outer_options
@@ -437,17 +491,18 @@ command_handler:
     cmp [sign_flag], 1
     je .inner_options
 
+    mov al, [input_buffer]
+    add al, 6
+    mov [input_buffer], al
     cmp word[input_buffer], SIGN_IN
     jl .invalid
     cmp word[input_buffer], SIGN_UP
     jg .invalid
-    mov al, [input_buffer]
-    mov rbx, 6
-    add rax, rbx
+    
     jmp .valid
 
     .inner_options:
-    cmp word[input_buffer], TRANSFER
+    cmp word[input_buffer], CHECK
     jl .invalid
     cmp word[input_buffer], SIGN_OUT
     jg .invalid

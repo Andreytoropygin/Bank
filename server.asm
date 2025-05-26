@@ -4,7 +4,7 @@ include 'func.asm'
 
 section '.bss' writable
 
-f db "/dev/random", 0   ; расположение ГСЧ
+f db "/dev/urandom", 0   ; расположение ГСЧ
 users db './users', 0   ; расположение каталога пользователей
 
 ; константы
@@ -18,12 +18,13 @@ users db './users', 0   ; расположение каталога пользо
     TAKE_CREDIT = 0x34      ; '4' + 0
     PAY_CREDIT = 0x35       ; '5' + 0
     SIGN_OUT = 0x36         ; '6' + 0
-    BREAK = 0x15
+    CANCEL = 0x15
     M = 1000000
     KOEF = 100
 
 ; переменные
 .var:
+    container rb 20         ; контейнер
     buffer rb 20            ; буфер
     rand dq ?               ; дескриптор ГСЧ
     server_socket dq ?      ; дескриптор сокета сервера
@@ -200,14 +201,16 @@ _start:
         call recieve
         cmp rax, 0
         je .client_disconnected
-        cmp word[rsi], BREAK
+        cmp word[rsi], CANCEL
         je .main_loop
 
-        mov rsi, buffer         ; получение пароля
+        call send_success
+
+        mov rsi, container         ; получение пароля
         call recieve
         cmp rax, 0
         je .client_disconnected
-        cmp word[rsi], BREAK
+        cmp word[rsi], CANCEL
         je .main_loop
 
         mov rsi, user
@@ -221,16 +224,27 @@ _start:
         cmp rax, 0
         jne @f
 
-        call send_success
-        jmp .main_loop
+        mov rsi, buffer
+        call recieve
+        cmp rax, 0
+        je .client_disconnected
 
-        mov rax, 1               ;номер системного вызова записи
+        call send_success
+
+        mov rsi, buffer
+        call recieve
+        cmp rax, 0
+        je .client_disconnected
+
         mov rdi, [client_socket] ;загружаем файловый дескриптор
         mov rsi, user.name
         mov rax, rsi
         call len_str             ;получаем длину сообщения
         mov rdx, rax
+        mov rax, 1               ;номер системного вызова записи
         syscall
+
+        jmp .main_loop
 
         @@:
         call send_fault
@@ -243,48 +257,64 @@ _start:
         call recieve
         cmp rax, 0
         je .client_disconnected
-        cmp word[rsi], BREAK
+        cmp word[rsi], CANCEL
         je .main_loop
+
+        call send_success
 
         mov rsi, user.password
         call recieve
         cmp rax, 0
         je .client_disconnected
-        cmp word[rsi], BREAK
+        cmp word[rsi], CANCEL
         je .main_loop
 
         call create_file
         
-        mov rax, 1               ;номер системного вызова записи
         mov rdi, [client_socket] ;загружаем файловый дескриптор
         mov rsi, user.id
         mov rax, rsi
         call len_str             ;получаем длину сообщения
         mov rdx, rax
+        mov rax, 1               ;номер системного вызова записи
         syscall
 
         jmp .main_loop
 
     .check:
         call send_success
+        
+        mov rsi, buffer
+        call recieve
+        cmp rax, 0
+        je .client_disconnected
 
         mov rsi, user
         call read_file
 
-        mov rax, 1               ;номер системного вызова записи
         mov rdi, [client_socket] ;загружаем файловый дескриптор
-        mov rsi, user.score
+        mov rax, [user.score]
+        mov rsi, buffer
+        call number_str
         mov rax, rsi
         call len_str             ;получаем длину сообщения
         mov rdx, rax
+        mov rax, 1               ;номер системного вызова записи
         syscall
 
-        mov rax, 1               ;номер системного вызова записи
+        mov rsi, buffer
+        call recieve
+        cmp rax, 0
+        je .client_disconnected
+
         mov rdi, [client_socket] ;загружаем файловый дескриптор
-        mov rsi, user.credit
+        mov rax, [user.credit]
+        mov rsi, buffer
+        call number_str
         mov rax, rsi
         call len_str             ;получаем длину сообщения
         mov rdx, rax
+        mov rax, 1               ;номер системного вызова записи
         syscall
         
         jmp .main_loop
@@ -296,14 +326,16 @@ _start:
         call recieve
         cmp rax, 0
         je .client_disconnected
-        cmp word[rsi], BREAK
+        cmp word[rsi], CANCEL
         je .main_loop
 
-        mov rsi, buffer
+        call send_success
+
+        mov rsi, container
         call recieve
         cmp rax, 0
         je .client_disconnected
-        cmp word[rsi], BREAK
+        cmp word[rsi], CANCEL
         je .main_loop
 
         mov rsi, target
@@ -313,15 +345,19 @@ _start:
 
         call send_success
 
+        mov rsi, buffer
+        call recieve
+        cmp rax, 0
+        je .client_disconnected
+
         mov rsi, user
         call read_file
         
-        mov rsi, buffer
+        mov rsi, container
         call str_number
         mov rbx, rax
 
-        mov rdx, [user.score]
-        cmp rdx, M
+        cmp qword[user.score], M
         jge .skip
         
         mov rcx, KOEF
@@ -329,11 +365,11 @@ _start:
         add rax, rbx
 
         .skip:
-        cmp rax, [user.score]
+        cmp rax, qword[user.score]
         jg @f
 
-        sub [user.score], rax
-        add [target.score], rbx
+        sub qword[user.score], rax
+        add qword[target.score], rbx
         
         mov rsi, user
         call write_file
@@ -350,38 +386,41 @@ _start:
     .deposit:
         call send_success
 
-        mov rsi, buffer
+        mov rsi, container
         call recieve
         cmp rax, 0
         je .client_disconnected
-        cmp word[rsi], BREAK
+        cmp word[rsi], CANCEL
         je .main_loop
 
         mov rsi, user
         call read_file
 
-        mov rsi, buffer
+        mov rsi, container
         call str_number
         add [user.score], rax
 
         mov rsi, user
         call write_file
+
+        call send_success
+
         jmp .main_loop
 
     .withdraw:
         call send_success
 
-        mov rsi, buffer
+        mov rsi, container
         call recieve
         cmp rax, 0
         je .client_disconnected
-        cmp word[rsi], BREAK
+        cmp word[rsi], CANCEL
         je .main_loop
 
         mov rsi, user
         call read_file
 
-        mov rsi, buffer
+        mov rsi, container
         call str_number
         cmp rax, [user.score]
         jg @f
@@ -401,27 +440,30 @@ _start:
     .take_credit:
         call send_success
 
-        mov rsi, buffer
+        mov rsi, container
         call recieve
         cmp rax, 0
         je .client_disconnected
-        cmp word[rsi], BREAK
+        cmp word[rsi], CANCEL
         je .main_loop
 
         mov rsi, user
         call read_file
 
-        mov rsi, buffer
-        call str_number
-
-        mov rbx, [user.credit]
-        cmp rbx, 0
+        cmp [user.credit], 0
         jg @f
 
         call send_success
 
-        mov rbx, [user.score]
-        cmp rbx, M
+        mov rsi, buffer
+        call recieve
+        cmp rax, 0
+        je .client_disconnected
+
+        mov rsi, container
+        call str_number
+        
+        cmp [user.score], M
         jge .premium
         
         cmp rax, M
@@ -448,21 +490,30 @@ _start:
     .pay_credit:
         call send_success
 
-        mov rsi, buffer
+        mov rsi, container
         call recieve
         cmp rax, 0
         je .client_disconnected
-        cmp word[rsi], BREAK
+        cmp word[rsi], CANCEL
         je .main_loop
 
         mov rsi, user
         call read_file
 
-        mov rsi, buffer
+        mov rsi, container
         call str_number
+        push rax
         cmp rax, [user.score]
         jg @f
 
+        call send_success
+
+        mov rsi, buffer
+        call recieve
+        cmp rax, 0
+        je .client_disconnected
+
+        pop rax
         cmp rax, [user.credit]
         jg @f
 
@@ -481,6 +532,7 @@ _start:
 
     .sign_out:
         call send_success
+        jmp .main_loop
 
 .bind_error:
     mov rsi, msg_bind_error
@@ -548,12 +600,15 @@ recieve:
     mov rdi, [client_socket] ;загружаем файловый дескриптор
     mov rdx, 20              ;устанавливаем количество считываемых данных
     syscall
+    mov byte[rsi+rax], 0
     ret
 
 ; отправить сообщение об успехе
 ; ввод: нет
 ; вывод: нет
 send_success:
+    push rax
+
     mov rax, 1               ;номер системного вызова записи
     mov rdi, [client_socket] ;загружаем файловый дескриптор
     mov rsi, msg_success
@@ -561,6 +616,8 @@ send_success:
     call len_str             ;получаем длину сообщения
     mov rdx, rax
     syscall
+
+    pop rax
     ret
 
 ; отправить сообщение о неудаче
@@ -583,34 +640,50 @@ create_file:
     ; открываем ГСЧ
     mov rax, 2
     mov rdi, f
-    mov rsi, 0o
+    mov rsi, 0
     syscall
     mov [rand], rax
 
+    ; инициализируем начальные значения
+    mov [user.score], 0
+    mov [user.credit], 0
+
     .try_generate:
+        ; читаем 4 байта из /dev/random
         mov rax, 0
-        mov rdi, rand
+        mov rdi, [rand]
         mov rsi, buffer
-        mov rdx, 2
+        mov rdx, 4
         syscall
 
-        call str_number
-        mov rbx, 9000
+        ; генерируем 6-значный ID (от 100000 до 999999)
+        mov eax, dword[buffer]
+        and rax, 0x7FFFFFFF  ; убираем возможный знаковый бит
+        mov rbx, 900000
+        xor rdx, rdx
         div rbx
-        mov rbx, 1000
-        add rdx, rbx
+        add rdx, 100000      ; гарантируем 6 цифр
         mov rax, rdx
         mov rsi, user.id
         call number_str
-    
+
+        ; проверяем существование файла (sys_access)
+        mov rax, 21         ; sys_access
+        mov rdi, user.id
+        mov rsi, 0          ; F_OK (проверка существования)
+        syscall
+        cmp rax, 0
+        je .try_generate    ; если файл существует, пробуем снова
+
+    ; создаем файл
     mov rax, 2
     mov rdi, user.id
-    mov rsi, 300o
+    mov rsi, 101o       ; O_CREAT|O_WRONLY
+    mov rdx, 600o       ; права доступа -rw-------
     syscall
-    cmp rax, 0
-    jl .try_generate
+    mov rdi, rax        ; файловый дескриптор
 
-    mov rdi, rax
+    ; записываем данные
     mov rsi, user.name
     call writeline
 
@@ -623,20 +696,22 @@ create_file:
     call writeline
 
     mov rax, [user.credit]
+    mov rsi, buffer
     call number_str
     call writeline
 
+    ; закрываем файл
     mov rax, 3
     syscall
 
+    ; закрываем ГСЧ
     mov rax, 3
     mov rdi, [rand]
     syscall
-    ret
 
 ; чтение из файла пользователя
 ; ввод: rsi - место для данных
-; вывод: rax - = 0 в случае успеха, иначе -1
+; вывод: rax - 0 в случае успеха, иначе -1
 read_file:
     mov r9, rsi
 
@@ -648,21 +723,23 @@ read_file:
     jl .fault_read
 
     mov rdi, rax
-    mov rbx, 20
     mov rsi, r9
-    add rsi, rbx
+    add rsi, 20
     call readline
 
-    mov rbx, 20
-    add rsi, rbx
+    mov rsi, r9
+    add rsi, 40
     call readline
 
     mov rsi, buffer
     call readline
+    xor rax, rax
     call str_number
     mov qword[r9+60], rax
 
+    mov rsi, buffer
     call readline
+    xor rax, rax
     call str_number
     mov qword[r9+68], rax
 
@@ -670,7 +747,7 @@ read_file:
     syscall
 
     xor rax, rax
-    .fault_read
+    .fault_read:
     ret
 
 ; запись в файл пользователя
@@ -686,12 +763,11 @@ write_file:
     mov rdi, rax
 
     mov rsi, r9
-    mov rbx, 20
-    add rsi, rbx
+    add rsi, 20
     call writeline
     
-    mov rbx, 20
-    add rsi, rbx
+    mov rsi, r9
+    add rsi, 40
     call writeline
 
     mov rax, qword[r9+60]
@@ -707,22 +783,24 @@ write_file:
     syscall
     ret
 
-; проверка правильности пароля (buffer и user.password)
+; проверка правильности пароля (container и user.password)
 ; ввод: нет
 ; вывод: rax - 0, если правильно, иначе 1
 check_password:
-    mov rax, buffer
-    mov rbx, user.password
+    mov r9, container
+    mov r10, user.password
 
     .check_loop:
-        cmp [rax], [rbx]
+        mov al, byte[r9]
+        mov bl, byte[r10]
+        cmp al, bl
         jne .check_fault
 
-        cmp [rax], 0
+        cmp al, 0
         je .check_success
 
-        inc rax
-        inc rbx
+        inc r9
+        inc r10
         jmp .check_loop
 
     .check_success:
