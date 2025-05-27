@@ -1,195 +1,201 @@
-;Function exit
+SYS_EXIT = 60
+SYS_READ = 0
+SYS_WRITE = 1
+
+; Function exit - завершает программу с кодом возврата 0
 exit:
-    mov rax, 0x3c
-    mov rdi, 0
+    mov rax, SYS_EXIT
+    mov rdi, 0     ; код возврата
     syscall
 
-;Function printing of string
-;input rsi - place of memory of begin string
+; Function print_str - выводит строку на стандартный вывод
+; Вход: rsi - указатель на начало строки
 print_str:
-    push rdi
+    push rdi       ; сохраняем регистры
     push rsi
-
-    mov rax, rsi
+    
+    mov rax, rsi   ; получаем длину строки
     call len_str
-    mov rdx, rax
-    mov rax, 1
-    mov rdi, 1
+    mov rdx, rax   ; длина строки для вывода
+    mov rax, 1     ; номер системного вызова write
+    mov rdi, 1     ; файловый дескриптор stdout
     syscall
 
-    pop rsi
+    pop rsi        ; восстанавливаем регистры
     pop rdi
     ret
 
-;The function makes new line
+; Function new_line - выводит символ новой строки
 new_line:
-    push rdi
+    push rdi       ; сохраняем регистры
     push rsi
     push rcx
 
-    mov rax, 0xA
-    push rax
-    mov rdi, 1
-    mov rsi, rsp
-    mov rdx, 1
-    mov rax, 1
+    mov rax, 0xA   ; символ новой строки
+    push rax       ; помещаем в стек
+    mov rdi, 1     ; stdout
+    mov rsi, rsp   ; указатель на символ в стеке
+    mov rdx, 1     ; длина 1 байт
+    mov rax, 1     ; номер системного вызова write
     syscall
-    pop rax
+    pop rax        ; очищаем стек
 
-    pop rcx
+    pop rcx        ; восстанавливаем регистры
     pop rsi
     pop rdi
     ret
 
-;The function finds the length of a string
-;input rax - place of memory of begin string
-;output rax - length of the string
+; Function len_str - вычисляет длину строки
+; Вход: rax - указатель на начало строки
+; Выход: rax - длина строки
 len_str:
-    mov rdx, rax
+    mov rdx, rax   ; сохраняем начало строки
     .iter:
-        cmp byte [rax], 0
+        cmp byte [rax], 0  ; проверяем конец строки
         je .next
-        inc rax
+        inc rax            ; переходим к следующему символу
         jmp .iter
     .next:
-        sub rax, rdx
+        sub rax, rdx       ; вычисляем длину
         ret
 
-;Function converting the string to the natural number
-;input rsi - place of memory of begin string
-;output rax - the natural number from the string
+; Function str_number - преобразует строку в число
+; Вход: rsi - указатель на строку с числом
+; Выход: rax - полученное число (0 при ошибке)
 str_number:
-    push rsi
+    push rsi       ; сохраняем регистры
     push rdi
 
-    xor rax,rax
-    xor rcx,rcx
+    xor rax, rax   ; обнуляем результат
+    xor rcx, rcx   ; обнуляем счетчик
     .loop:
         xor rbx, rbx
-        mov bl, byte [rsi+rcx]
-        cmp bl, 48
+        mov bl, byte [rsi+rcx]  ; получаем текущий символ
+        cmp bl, 48             ; проверяем цифру (0-9)
         jl @f
         cmp bl, 57
         jg @f
 
-        sub bl, 48
-        add rax, rbx
-        mov rbx, 10
-        mul rbx
-        inc rcx
+        sub bl, 48             ; преобразуем символ в цифру
+        add rax, rbx           ; добавляем к результату
+        mov rbx, 10            
+        mul rbx                ; умножаем на 10 для разряда
+        inc rcx                ; переходим к следующему символу
         jmp .loop
 
     @@:
-    cmp byte[rsi+rcx], 0
+    cmp byte[rsi+rcx], 0       ; проверяем корректное завершение
     je .success
-    xor rax, rax
+    xor rax, rax               ; возвращаем 0 при ошибке
 
     .success:
     mov rbx, 10
-    div rbx
+    div rbx                    ; корректируем результат
 
-    pop rdi
+    pop rdi        ; восстанавливаем регистры
     pop rsi
     ret
 
-;The function converts the number to string
-;input rax - number
-;rsi -address of begin of string
+; Function number_str - преобразует число в строку
+; Вход: rax - число для преобразования
+;       rsi - указатель на буфер для строки
 number_str:
-    push rdi
+    push rdi       ; сохраняем регистры
     push rsi
 
-    xor rcx, rcx
-    mov rbx, 10
+    xor rcx, rcx   ; обнуляем счетчик цифр
+    mov rbx, 10    ; основание системы
     .loop_1:
         xor rdx, rdx
-        div rbx
-        add rdx, 48
-        push rdx
-        inc rcx
-        cmp rax, 0
+        div rbx              ; получаем последнюю цифру
+        add rdx, 48          ; преобразуем в символ
+        push rdx             ; сохраняем в стек
+        inc rcx              ; увеличиваем счетчик
+        cmp rax, 0           ; проверяем конец числа
         jne .loop_1
     xor rdx, rdx
     .loop_2:
-        pop rax
-        mov byte [rsi+rdx], al
-        inc rdx
-        dec rcx
-        cmp rcx, 0
+        pop rax              ; извлекаем символы из стека
+        mov byte [rsi+rdx], al  ; записываем в буфер
+        inc rdx              ; перемещаем указатель
+        dec rcx              ; уменьшаем счетчик
+        cmp rcx, 0           ; проверяем конец
         jne .loop_2
-    mov byte [rsi+rdx], 0 
+    mov byte [rsi+rdx], 0    ; добавляем нуль-терминатор
 
-    pop rsi
+    pop rsi        ; восстанавливаем регистры
     pop rdi
     ret
 
-;The function realizates user input from the keyboard
-;input: rsi - place of memory saved input string 
+; Function input_keyboard - читает ввод с клавиатуры
+; Вход: rsi - указатель на буфер для ввода
+; Выход: rax - количество прочитанных байтов
 input_keyboard:
-    mov rax, 0
-    mov rdi, 0
-    mov rdx, 20
+    mov rax, SYS_READ
+    mov rdi, 0     ; stdin
+    mov rdx, 20    ; максимальная длина
     syscall
     
-    dec rax
-    mov byte[rsi+rax], 0
-    inc rax
+    dec rax        ; убираем символ новой строки
+    mov byte[rsi+rax], 0  ; добавляем нуль-терминатор
+    inc rax        ; возвращаем корректную длину
     ret
 
-;Function reading of string from file
-;input rsi - place of memory to place string,
-; rdi - descriptor
-;output rsi - string, rax - length
+; Function readline - читает строку из файла
+; Вход: rsi - указатель на буфер
+;       rdi - файловый дескриптор
+; Выход: rsi - указатель на строку
+;        rax - длина прочитанной строки
 readline:
-    push rdi
+    push rdi       ; сохраняем регистры
     push rsi
 
-    xor rcx, rcx
+    xor rcx, rcx   ; обнуляем счетчик
     .loop:
         push rcx
-        mov rax, 0
-        mov rdx, 1
+        mov rax, SYS_READ
+        mov rdx, 1     ; читаем по 1 символу
         syscall
         pop rcx
-        cmp rax, 0
+        cmp rax, 0     ; проверяем конец файла
         je .end
-        cmp byte[rsi], 0xA
+        cmp byte[rsi], 0xA  ; проверяем символ новой строки
         je .end
-        cmp byte[rsi], 0
+        cmp byte[rsi], 0    ; проверяем нуль-терминатор
         je .end
-        inc rsi
-        inc rcx
+        inc rsi       ; перемещаем указатель
+        inc rcx       ; увеличиваем счетчик
         jmp .loop
     .end:
-    mov byte[rsi], 0
-    sub rsi, rcx
-    mov rax, rcx
+    mov byte[rsi], 0  ; добавляем нуль-терминатор
+    sub rsi, rcx      ; возвращаем указатель на начало
+    mov rax, rcx      ; возвращаем длину
 
-    pop rsi
+    pop rsi        ; восстанавливаем регистры
     pop rdi
     ret
 
-;Function writing string to file
-;input rsi - place of string in memory,
-; rdi - descriptor
+; Function writeline - записывает строку в файл
+; Вход: rsi - указатель на строку
+;       rdi - файловый дескриптор
 writeline:
-    push rdi
+    push rdi       ; сохраняем регистры
     push rsi
 
-    mov rax, rsi
+    mov rax, rsi   ; получаем длину строки
     call len_str
-    mov rdx, rax
-    mov rax, 1
+    mov rdx, rax   ; длина для записи
+    mov rax, SYS_WRITE
     syscall
 
-    mov rax, 0xA
+    mov rax, 0xA   ; добавляем символ новой строки
     push rax
-    mov rsi, rsp
-    mov rdx, 1
-    mov rax, 1
+    mov rsi, rsp   ; указатель на символ
+    mov rdx, 1     ; длина 1 байт
+    mov rax, SYS_WRITE
     syscall
-    pop rax
+    pop rax        ; очищаем стек
 
-    pop rsi
+    pop rsi        ; восстанавливаем регистры
     pop rdi
     ret
